@@ -688,3 +688,49 @@ func TestZeroPaddedCalver(t *testing.T) {
 		t.Errorf("nextCalver(next date) = %q, want %q", nextVer2.Tag(), "v2026.0124.0")
 	}
 }
+
+func TestNextCalverWeekFormatIsMonotonicAcrossNewYear(t *testing.T) {
+	tests := []struct {
+		name  string
+		start time.Time
+		end   time.Time
+	}{
+		{
+			// 2025-12-29 belongs to ISO week 2026-W01
+			name:  "2025 to 2026",
+			start: time.Date(2025, 12, 20, 0, 0, 0, 0, time.UTC),
+			end:   time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			// 2027-01-01 belongs to ISO week 2026-W53
+			name:  "2026 to 2027",
+			start: time.Date(2026, 12, 20, 0, 0, 0, 0, time.UTC),
+			end:   time.Date(2027, 1, 10, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	const format = "YYYY.0W.MICRO"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			curr := newCalver(tt.start, false, format)
+			for now := tt.start.AddDate(0, 0, 1); !now.After(tt.end); now = now.AddDate(0, 0, 1) {
+				sv, err := newSemver(curr.Tag())
+				if err != nil {
+					t.Fatalf("newSemver(%s) failed: %v", curr.Tag(), err)
+				}
+				sv.asCalendarVersion = true
+				sv.calverFormat = format
+
+				next := sv.nextCalver(now)
+				nextSv, err := newSemver(next.Tag())
+				if err != nil {
+					t.Fatalf("newSemver(%s) failed: %v", next.Tag(), err)
+				}
+				if !nextSv.sv.GreaterThan(sv.sv) {
+					t.Errorf("nextCalver(%s) = %s, want greater than %s", now.Format("2006-01-02"), next.Tag(), curr.Tag())
+				}
+				curr = next
+			}
+		})
+	}
+}
